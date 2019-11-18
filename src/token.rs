@@ -11,6 +11,28 @@ impl Token {
     pub fn parse_token(s : &str) -> TokenStreamer {
         TokenStreamer::new(s)
     }
+
+    pub fn is_non_terminal(&self) -> bool {
+        match *self {
+            Token::NonTerminal(_) => true,
+            _ => false, 
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        match *self {
+            Token::Terminal(_) => true,
+            _ => false, 
+        }
+    }
+
+    pub fn is_epsilon(&self) -> bool {
+        match *self {
+            Token::Epsilon => true,
+            _ => false, 
+        }
+    }
+
 }
 
 
