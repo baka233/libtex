@@ -1,10 +1,21 @@
 use std::iter::Iterator;
+use std::fmt::{self, Display};
 
 #[derive(Debug, Eq, Clone, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Token {
     Terminal(String),
     NonTerminal(String),
     Epsilon,
+}
+
+impl Display for Token {
+    fn fmt(&self, f : &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Token::Terminal(s) => write!(f, "{}", s),
+            Token::NonTerminal(s) => write!(f, "{}", s),
+            Token::Epsilon => write!(f, "ε"),
+        }
+    }
 }
 
 impl Token {
