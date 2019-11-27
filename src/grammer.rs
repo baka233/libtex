@@ -2,6 +2,8 @@ use std::collections::{HashMap, BTreeSet, VecDeque, BTreeMap};
 use std::io::{BufRead};
 use crate::token::Token;
 use log::{info, warn, debug};
+use dot;
+use std::borrow::Cow;
 
 /// Grammer struct have all grammers store in it
 pub struct Grammer {
@@ -342,6 +344,22 @@ impl Grammer {
         ans
     }
 
+    pub fn draw(&self, s : &str) -> GrammerTree {
+        let mut stack = Vec::new(); 
+        let mut token_vec : VecDeque<_> = Token::parse_token(s)
+            .collect();
+        token_vec.push_back(Token::Epsilon);
+
+        // push the end to the Stack
+        stack.push(Token::Epsilon);
+        stack.push(self.start_token.clone());
+        let mut node = GrammerNode::new(self.start_token.clone());
+        tree_scanner(&mut node, &mut stack, &mut token_vec, &self.ll_map);
+        GrammerTree {
+            tree : Some(node)
+        }
+    }
+
     pub fn analysis(&self, s : &str) {
         let mut stack = Vec::new(); 
         let mut token_vec : VecDeque<_> = Token::parse_token(s)
@@ -389,6 +407,159 @@ impl Grammer {
                     break;
                 }
             }
+        }
+    }
+}
+
+fn tree_scanner(root : &mut GrammerNode, stack : &mut Vec<Token>, token_vec : &mut VecDeque<Token>, ll_map : &BTreeMap<Token, BTreeMap<Token, Option<(Token, Vec<Token>)>>>) {
+    if stack.is_empty() {
+        return;
+    }
+    let top = stack.pop().expect("unreachable");
+    let top_token = token_vec.get(0).unwrap();
+    println!("top is {}", top);
+    if top == Token::Epsilon {
+        if top == *top_token {
+            println!("Success");
+            return;
+        } else {
+            println!("Error A");
+            return;
+        }
+    }
+    if top.is_terminal() {
+        if *top_token == top {
+            let tmp = token_vec.pop_front().unwrap();
+            println!("{}匹配", tmp);
+            return;
+        } else {
+            println!("Error C");
+            return;
+        }
+    } else if top.is_non_terminal() {
+        if let Some((_, data)) = ll_map.get(&top).unwrap().get(&top_token).unwrap() {
+            for item in data.iter().rev() {
+                if *item == Token::Epsilon {
+                    return;
+                }  
+                stack.push(item.clone());
+            }
+            for item in data.iter() {
+                let mut node = GrammerNode::new(item.clone());
+                tree_scanner(&mut node, stack, token_vec, ll_map);
+                root.child.push(node);
+            }
+            print!("{:<20}", print_table(data.iter()));
+            println!("");
+        } else {
+            println!("Error D");
+            return;
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct GrammerTree {
+    tree : Option<GrammerNode>,
+}
+
+impl GrammerTree {
+    pub fn new(token : Token) -> Self {
+        GrammerTree {
+            tree : Some(GrammerNode::new(token))
+        }
+    }
+
+}
+
+type Nd = (Token, usize);
+type Ed = ((Token, usize), (Token, usize));
+
+
+impl<'a> dot::GraphWalk<'a, Nd, Ed> for GrammerTree {
+    fn nodes(&self) -> dot::Nodes<'a, Nd> {
+        let root = self.tree.as_ref().unwrap();
+        let mut queue = VecDeque::new() ;
+        let mut num = 0;
+        let mut nodes = Vec::new();
+        queue.push_back((root, num));
+        nodes.push((root.token.clone(), num));
+        while !queue.is_empty() {
+            let (top, _) = queue.pop_front().unwrap();
+            top.child.iter().for_each(|item| {
+                num += 1;
+                queue.push_back((item, num)) ;
+                nodes.push((item.token.clone(), num));
+            });
+        }
+        Cow::Owned(nodes)
+    } 
+
+    fn edges(&'a self) -> dot::Edges<'a, Ed> {
+        let root = self.tree.as_ref().unwrap();
+        let mut queue = VecDeque::new() ;
+        let mut num = 0;
+        let mut edges = Vec::new();
+        queue.push_back((root, num));
+        while !queue.is_empty() {
+            let (top, tmp_num) = queue.pop_front().unwrap();
+            top.child.iter().for_each(|item| {
+                num += 1;
+                edges.push(((top.token.clone(), tmp_num), (item.token.clone(), num)));
+                queue.push_back((item, num));
+            });
+        }
+        Cow::Owned(edges)
+    }
+
+    fn source(&self, e : &Ed) -> Nd { e.0.clone() }
+    fn target(&self, e : &Ed) -> Nd { e.1.clone() }
+}
+
+impl<'a> dot::Labeller<'a, Nd, Ed> for GrammerTree {
+    fn graph_id(&'a self) -> dot::Id<'a> {
+        dot::Id::new("Grammer").unwrap()
+    }
+
+    fn node_id(&'a self, n : &Nd) -> dot::Id<'a> {
+        dot::Id::new(format!("node{}", n.1)).expect("format error")
+    }
+
+    fn node_label(&self, nd : &Nd) -> dot::LabelText {
+        dot::LabelText::LabelStr(Cow::Owned(nd.0.to_string()))
+    }
+
+//    fn node_shape(&'a self, n : &Nd) -> Option<dot::LabelText<'a>> {
+//        if self.nodes.get(n).unwrap().nodetype == DFANodeType::NonTerminal {
+//            Some(dot::LabelText::LabelStr(Cow::Owned("circle".to_string())))
+//        } else {
+//            Some(dot::LabelText::LabelStr(Cow::Owned("box".to_string())))
+//        }
+//    }
+
+//    fn edge_label(&self, ed : &Ed) -> dot::LabelText {
+//        let s = match ed.2 {
+//            Token::Epsilon => "Epsilon".to_string(),
+//            Token::Character(ch) => ch.to_string(),
+//            _ => unreachable!(),
+//        };
+//        dot::LabelText::LabelStr(Cow::Owned(format!("{}", s)))
+//    }
+}
+
+
+
+#[derive(Debug)]
+pub struct GrammerNode {
+    token : Token,
+    child : Vec<GrammerNode> 
+}
+
+impl GrammerNode {
+    pub fn new(token : Token) -> Self {
+        GrammerNode {
+            token,
+            child : Vec::new()
         }
     }
 }
@@ -483,6 +654,10 @@ fn test_first_3() {
     }
     println!("{:-<120}", "-");
     grammers.analysis("(i*i)+i");
+    let grammer_draw = grammers.draw("(i*i)+i");
+    let mut output = File::create("example.dot").unwrap();
+    dot::render(&grammer_draw, &mut output).unwrap();
+
 }
 
 
@@ -495,4 +670,17 @@ where
         string = format!("{}{}", string, each);
     }
     string
+}
+
+
+fn map_string(s : &str) -> String {
+    match s {
+        "+" => "add".to_owned(),
+        "-" => "minus".to_owned(),
+        "*" => "mul".to_owned(),
+        "/" => "div".to_owned(),
+        "(" => "l_bracets".to_owned(),
+        ")" => "r_bracets".to_owned(),
+        _ => s.to_string(),
+    }
 }
